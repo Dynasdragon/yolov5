@@ -85,7 +85,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
     # Hyperparameters
     if isinstance(hyp, str):
-        with open(hyp, errors='ignore') as f:
+        with open(hyp, errors='ignore', encoding='utf-8') as f:
             hyp = yaml.safe_load(f)  # load hyps dict
     LOGGER.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
     opt.hyp = hyp.copy()  # for saving hyps to checkpoints
@@ -98,8 +98,13 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     # Loggers
     data_dict = None
     if RANK in {-1, 0}:
-        loggers = Loggers(save_dir, weights, opt, hyp, LOGGER)  # loggers instance
-
+        try:
+            loggers = Loggers(save_dir, weights, opt, hyp, LOGGER)  # loggers instance
+        except yaml.YAMLError as e:
+            print("Parsing YAML string failed")
+            print("Reason:", e.reason)
+            print("At position: {0} with encoding {1}".format(e.position, e.encoding))
+            print("Invalid char code:", e.character)
         # Register actions
         for k in methods(loggers):
             callbacks.register_action(k, callback=getattr(loggers, k))

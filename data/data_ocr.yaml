@@ -1,0 +1,8 @@
+path: dataset/
+
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 40
+names: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'britch_flag', 'britsh', 'c', 'columbia', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'plate', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
