@@ -34,9 +34,14 @@ import os
 import platform
 import sys
 from pathlib import Path
-
+import numpy as np
+import pytesseract
 import torch
+from PIL import Image
 
+
+
+pytesseract.pytesseract.tesseract_cmd = 'D:\\Program Files\\Tesseract-OCR\\tesseract.exe'
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
@@ -51,6 +56,55 @@ from utils.general import (LOGGER, Profile, check_file, check_img_size, check_im
                            increment_path, non_max_suppression, print_args, scale_boxes, strip_optimizer, xyxy2xywh)
 from utils.torch_utils import select_device, smart_inference_mode
 
+def my_function(image):
+        
+    # convert the image to grayscale and flip the foreground
+    # and background to ensure foreground is now "white" and
+    # the background is "black"
+    #gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    #gray = cv2.bitwise_not(gray)
+    
+    # threshold the image, setting all foreground pixels to
+    # 255 and all background pixels to 0
+    thresh = cv2.threshold(image, 0, 255,
+        cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+    
+    # grab the (x, y) coordinates of all pixel values that
+    # are greater than zero, then use these coordinates to
+    # compute a rotated bounding box that contains all
+    # coordinates
+    coords = np.column_stack(np.where(thresh > 0))
+    angle = cv2.minAreaRect(coords)[-1]
+    
+    # the `cv2.minAreaRect` function returns values in the
+    # range [-90, 0); as the rectangle rotates clockwise the
+    # returned angle trends to 0 -- in this special case we
+    # need to add 90 degrees to the angle
+    if angle < -45:
+        angle = -(90 + angle)
+    
+    # otherwise, just take the inverse of the angle to make
+    # it positive
+    else:
+        angle = -angle
+    
+    # rotate the image to deskew it
+    (h, w) = image.shape[:2]
+    center = (w // 2, h // 2)
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+    rotated = cv2.warpAffine(image, M, (w, h),
+        flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    
+    # draw the correction angle on the image so we can validate it
+    #cv2.putText(rotated, "Angle: {:.2f} degrees".format(angle),
+    #    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+    
+    # show the output image
+    print("[INFO] angle: {:.3f}".format(angle))
+    cv2.imshow("Input", image)
+    cv2.imshow("Rotated", rotated)
+    return rotated
+    cv2.waitKey(0)
 
 @smart_inference_mode()
 def run(
@@ -167,6 +221,8 @@ def run(
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             imc = im0.copy() if save_crop else im0  # for save_crop
             annotator = Annotator(im0, line_width=line_thickness, example=str(names))
+
+
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()
@@ -175,11 +231,14 @@ def run(
                 for c in det[:, 5].unique():
                     n = (det[:, 5] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
-
+                
+                j = 0
                 # Write results
                 for *xyxy, conf, cls in reversed(det):
                     c = int(cls)  # integer class
+                    print(int(cls))
                     label = names[c] if hide_conf else f'{names[c]}'
+                    print(label)
                     confidence = float(conf)
                     confidence_str = f'{confidence:.2f}'
 
@@ -198,6 +257,59 @@ def run(
                         annotator.box_label(xyxy, label, color=colors(c, True))
                     if save_crop:
                         save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
+                    
+                    #Crop to see only license plates
+                    save_obj = True
+                    if save_obj:
+                        
+                        if int(cls) == 1:
+                            filepath = str(save_dir / f'lp{j}{p.name}')
+                            x,y,w,h=int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]),   int(xyxy[3] - xyxy[1])
+                            img_ = im0.astype(np.uint8)
+                            crop_img=img_[y:y+ h, x:x + w]
+                            print(filepath)
+                            cv2.imwrite(filepath, (crop_img))
+                            img = cv2.imread(filepath)
+                            img = cv2.resize(img, (0, 0), fx=2, fy=2)
+                            img = np.maximum(img, 10)
+
+                            foreground = img.copy()
+                            seed = (10, 10)  # Use the top left corner as a "background" seed color (assume pixel [10,10] is not in an object).
+                            # Use floodFill for filling the background with black color
+                            cv2.floodFill(foreground, None, seedPoint=seed, newVal=(0, 0, 0), loDiff=(5, 5, 5, 5), upDiff=(5, 5, 5, 5))
+                            # Convert to Grayscale
+                            gray = cv2.cvtColor(foreground, cv2.COLOR_BGR2GRAY)
+
+                            # Apply threshold
+                            thresh = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)[1]
+
+                            # Use opening for removing small outliers
+                            thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
+
+                            # Find contours
+                            cntrs, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+                            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                            img = cv2.GaussianBlur( img, (5, 5), 0) 
+                            img = cv2.bilateralFilter(img, 9, 75, 75)
+
+                            # Draw contours
+                            cv2.drawContours(img, cntrs, -1, (255, 0, 255), 3)
+                            cv2.imwrite(filepath, (img))
+                            #hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+                            #msk = cv2.inRange(hsv, np.array([0, 0, 123]), np.array([179, 255, 255]))
+                            #cv2.imwrite(filepath, (msk))
+
+                            text = pytesseract.image_to_string(filepath, config='--psm 8')
+                            clean_string = [s for s in text if s.isalnum()]
+
+                            # rejoin intermediate list into a string
+                            clean_string = "".join(clean_string)
+                            print(clean_string)
+                            j+=1
+                        else:
+                            print("There is no detected object")
+                            continue
 
             # Stream results
             im0 = annotator.result()
@@ -227,6 +339,8 @@ def run(
                         save_path = str(Path(save_path).with_suffix('.mp4'))  # force *.mp4 suffix on results videos
                         vid_writer[i] = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
                     vid_writer[i].write(im0)
+
+            
 
         # Print time (inference-only)
         LOGGER.info(f"{s}{'' if len(det) else '(no detections), '}{dt[1].dt * 1E3:.1f}ms")
@@ -275,7 +389,6 @@ def parse_opt():
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     print_args(vars(opt))
     return opt
-
 
 def main(opt):
     check_requirements(ROOT / 'requirements.txt', exclude=('tensorboard', 'thop'))
