@@ -1,8 +1,13 @@
-path: dataset/
+train: ../dataset/train/images
+val: ../dataset/valid/images
+test: ../dataset/test/images
 
-train: train/images
-val: valid/images
-test: test/images
+nc: 24
+names: ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'Car', 'D', 'L', 'LicensePlate', 'Pedestrian', 'Pedestrian-waiting', 'Q', 'Toy-cars-and-Lego-people', 'W', 'X', 'Y', 'Z']
 
-nc: 2
-names: ['license-plate', 'vehicle']
+roboflow:
+  workspace: lpr-o8wez
+  project: tlcs-data
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/lpr-o8wez/tlcs-data/dataset/1
